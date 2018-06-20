@@ -1,0 +1,8 @@
+{
+    "$schema": "https://aka.ms/azure-quickstart-templates-metadata-schema#",
+    "itemDisplayName": "Provision blank sql database to existing sql elastic pool",
+    "description": "This template provisions a new blank sql database to an existing sql elastic pool and by default will enable Transparent Data Encryption (TDE) for the database.",
+    "summary": "Provision a sql database with Transparent Data Encryption to an existing sql elastic pool",
+    "githubUsername": "philo",
+    "dateUpdated": "2018-06-20"
+  }
