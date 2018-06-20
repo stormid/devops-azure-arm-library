@@ -1,0 +1,51 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters":{
+      "environment":{
+          "type":"string",
+          "minLength": 3,
+          "maxLength":3,
+          "allowedValues": [
+              "dev",
+              "wip",
+              "tst",
+              "prd"
+          ]
+      },
+      "project":{
+          "type":"string",
+          "minLength": 2,
+          "maxLength": 10
+      },
+      "client" : {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5
+      },
+      "instance" : {
+          "type": "int",
+          "defaultValue": 1,
+          "metadata": {
+              "description" : "A unique instance counter for the resource"
+          }
+      }
+    },
+    "variables": {
+        "shortlocation": "[replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(resourceGroup().location, 'eastasia', 'ea'), 'southeastasia', 'sea'), 'centralus', 'cu'), 'eastus', 'eu'), 'eastus2', 'eu2'), 'westus', 'wu'), 'northcentralus', 'ncu'), 'southcentralus', 'scu'),'northeurope','ne'), 'westeurope', 'we'), 'japanwest', 'jw'), 'japaneast', 'je'), 'brazilsouth', 'bs'), 'australiaeast', 'ae'), 'australiasoutheast', 'ase'), 'canadacentral', 'cc'), 'canadaeast', 'ce'), 'uksouth', 'us'), 'ukwest', 'uw'), 'westcentralus', 'wcu'), 'westus2', 'wu2')]",
+        "defaultFormat": "[concat(parameters('environment'), '-', parameters('client'),'-{{resourceType}}-', parameters('project'), '-', variables('shortlocation'), '-', padLeft(parameters('instance'), 3, '0'))]",
+        "simpleFormat": "[replace(variables('defaultFormat'), '-', '')]"
+      },
+    "resources":[
+      ],
+      "outputs":{
+        "default": {
+            "type": "string",
+            "value": "[variables('defaultFormat')]"
+          },
+          "simple": {
+            "type": "string",
+            "value": "[variables('simpleFormat')]"
+          }
+      }
+   }
