@@ -1,6 +1,6 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
-    "contentVersion": "1.0.0.2",
+    "contentVersion": "1.0.0.3",
     "parameters": {
         "location": {
             "type": "string",
@@ -134,13 +134,12 @@
             "type": "string",
             "value": "[reference(concat('Microsoft.Sql/servers/', parameters('sqlServerName')), '2015-05-01-preview').fullyQualifiedDomainName]"
         },
-        "sqlDbName": {
-            "type": "string",
-            "value": "[parameters('sqlDbName')]"
-        },
-        "sqlDbConnectionString": {
-            "type": "securestring",
-            "value" : "[sql.buildConnectionString(reference(concat('Microsoft.Sql/servers/', parameters('sqlServerName')), '2015-05-01-preview').fullyQualifiedDomainName, parameters('sqlDbName'), parameters('sqlDbUserId'), parameters('sqlDbUserPassword'))]"
+        "sqlDb" : {
+            "type": "object",
+            "value": {
+                "name" : "[parameters('sqlDbName')]",
+                "connectionString" : "[sql.buildConnectionString(reference(concat('Microsoft.Sql/servers/', parameters('sqlServerName')), '2015-05-01-preview').fullyQualifiedDomainName, parameters('sqlDbName'), parameters('sqlDbUserId'), parameters('sqlDbUserPassword'))]"
+            }
         }
     }
 }
