@@ -11,7 +11,7 @@
             "maxLength": 25,
             "type": "string",
             "metadata": {
-                "description" : "The name of the sql server resource, excluding .database.windows.net"
+                "description": "The name of the sql server resource, excluding .database.windows.net"
             }
         },
         "sqlPoolName": {
@@ -19,7 +19,7 @@
             "maxLength": 25,
             "type": "string",
             "metadata": {
-                "description" : "The name of the sql elastic pool"
+                "description": "The name of the sql elastic pool"
             }
         },
         "sqlDbName": {
@@ -27,36 +27,36 @@
             "maxLength": 50,
             "type": "string",
             "metadata": {
-                "description" : "The name of the database to create"
+                "description": "The name of the database to create"
             }
         },
         "sqlDbUserId": {
             "type": "string",
             "defaultValue": "app",
             "metadata": {
-                "description" : "The user id to use when constructing the returned connection string"
+                "description": "The user id to use when constructing the returned connection string"
             }
         },
         "sqlDbUserPassword": {
             "type": "securestring",
             "defaultValue": "__PASSWORD__",
             "metadata": {
-                "description" : "The user password to use when constructing the returned connection string"
-            }            
+                "description": "The user password to use when constructing the returned connection string"
+            }
         },
         "sqlDbEnableTDE": {
             "type": "bool",
             "defaultValue": true,
             "metadata": {
-                "description" : "Whether to enable TDE (transparent database encryption), defaults to true"
+                "description": "Whether to enable TDE (transparent database encryption), defaults to true"
             }
         },
-        "sqlDbCollation" : {
+        "sqlDbCollation": {
             "type": "string",
             "defaultValue": "SQL_Latin1_General_CP1_CI_AS",
             "metadata": {
-                "description" : "What collation to use for the newly created database, defaults to SQL_Latin1_General_CP1_CI_AS"
-            }            
+                "description": "What collation to use for the newly created database, defaults to SQL_Latin1_General_CP1_CI_AS"
+            }
         }
     },
     "variables": {
@@ -101,7 +101,7 @@
             "location": "[parameters('location')]",
             "properties": {
                 "collation": "[parameters('sqlDbCollation')]",
-                "elasticPoolName": "[parameters('sqlPoolName')]"
+                "elasticPoolId": "[resourceId('Microsoft.Sql/servers/elasticpools', parameters('sqlServerName'), parameters('sqlPoolName'))]"
             },
             "resources": [
                 {
@@ -124,12 +124,13 @@
             "type": "string",
             "value": "[reference(concat('Microsoft.Sql/servers/', parameters('sqlServerName')), '2015-05-01-preview').fullyQualifiedDomainName]"
         },
-        "sqlDb" : {
-            "type": "object",
-            "value": {
-                "name" : "[parameters('sqlDbName')]",
-                "connectionString" : "[sql.buildConnectionString(reference(concat('Microsoft.Sql/servers/', parameters('sqlServerName')), '2015-05-01-preview').fullyQualifiedDomainName, parameters('sqlDbName'), parameters('sqlDbUserId'), parameters('sqlDbUserPassword'))]"
-            }
+        "sqlDbName": {
+            "type": "string",
+            "value": "[parameters('sqlDbName')]"
+        },
+        "sqlDbConnectionString": {
+            "type": "securestring",
+            "value": "[sql.buildConnectionString(reference(concat('Microsoft.Sql/servers/', parameters('sqlServerName')), '2015-05-01-preview').fullyQualifiedDomainName, parameters('sqlDbName'), parameters('sqlDbUserId'), parameters('sqlDbUserPassword'))]"
         }
     }
 }
