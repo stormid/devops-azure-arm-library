@@ -22,4 +22,4 @@ Use this template when you want to create a new database that is a copy of an ex
 | Name | Purpose |
 |-|-|
 |`sqlServerFqdn`|`string` containing the fully qualifed domain name for the sql server containing the database|
-|`sqlDb`|`object` containing a `name` property returning the database name and a `connectionstring` property containing a composed connection string the newly created database.  This will include values for `sqlDbUserId` and `sqlDbUserPassword` parameters.|
+|`sqlDbName`|`string` containing the name of the database|

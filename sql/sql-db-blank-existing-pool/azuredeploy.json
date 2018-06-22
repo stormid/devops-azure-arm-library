@@ -1,6 +1,6 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
-    "contentVersion": "1.0.0.3",
+    "contentVersion": "1.1.0.0",
     "parameters": {
         "location": {
             "type": "string",
@@ -30,20 +30,6 @@
                 "description": "The name of the database to create"
             }
         },
-        "sqlDbUserId": {
-            "type": "string",
-            "defaultValue": "app",
-            "metadata": {
-                "description": "The user id to use when constructing the returned connection string"
-            }
-        },
-        "sqlDbUserPassword": {
-            "type": "securestring",
-            "defaultValue": "__PASSWORD__",
-            "metadata": {
-                "description": "The user password to use when constructing the returned connection string"
-            }
-        },
         "sqlDbEnableTDE": {
             "type": "bool",
             "defaultValue": true,
@@ -62,37 +48,6 @@
     "variables": {
         "transparentDataEncryption": "[if(parameters('sqlDbEnableTDE'), 'Enabled', 'Disabled')]"
     },
-    "functions": [
-        {
-            "namespace": "sql",
-            "members": {
-                "buildConnectionString": {
-                    "parameters": [
-                        {
-                            "name": "sqlServerFqdn",
-                            "type": "string"
-                        },
-                        {
-                            "name": "sqlDatabaseName",
-                            "type": "string"
-                        },
-                        {
-                            "name": "sqlDatabaseUserId",
-                            "type": "string"
-                        },
-                        {
-                            "name": "sqlDatabaseUserPassword",
-                            "type": "string"
-                        }
-                    ],
-                    "output": {
-                        "type": "string",
-                        "value": "[concat('Server=tcp:', parameters('sqlServerFqdn') ,',1433;Initial Catalog=',parameters('sqlDatabaseName'),';Persist Security Info=False;User ID=', parameters('sqlDatabaseUserId'), ';Password=', parameters('sqlDatabaseUserPassword'), ';MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;')]"
-                    }
-                }
-            }
-        }
-    ],
     "resources": [
         {
             "type": "Microsoft.Sql/servers/databases",
@@ -127,10 +82,6 @@
         "sqlDbName": {
             "type": "string",
             "value": "[parameters('sqlDbName')]"
-        },
-        "sqlDbConnectionString": {
-            "type": "securestring",
-            "value": "[sql.buildConnectionString(reference(concat('Microsoft.Sql/servers/', parameters('sqlServerName')), '2015-05-01-preview').fullyQualifiedDomainName, parameters('sqlDbName'), parameters('sqlDbUserId'), parameters('sqlDbUserPassword'))]"
         }
     }
 }
