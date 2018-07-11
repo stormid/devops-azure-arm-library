@@ -1,6 +1,6 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
-    "contentVersion": "1.0.0.0",
+    "contentVersion": "1.1.0.0",
     "parameters": {
         "utcTime": {
             "type": "string",
@@ -43,13 +43,6 @@
             "metadata": {
                 "description": "The tenant id for the servicePrincipalClientId"
             }
-        },
-        "slackChannelName" : {
-            "type": "string",
-            "defaultValue": "#dev-bot"
-        },
-        "slackWebhookUrl" : {
-            "type": "securestring"
         }
     },
     "variables": {
@@ -61,10 +54,7 @@
         "resourceGroupApiVersion": "2014-04-01",
         "sqlDatabaseApiVersion": "2017-10-01-preview",
         "resourceGroupUri": "[concat('https://management.azure.com', subscription().id, '/resourceGroups/', variables('resourceGroupName'), '?api-version=', variables('resourceGroupApiVersion'))]",
-        "sqlDatabaseUri": "[concat('https://management.azure.com', subscription().id, '/resourceGroups/', variables('sqlResourceGroupName'), '/providers/Microsoft.Sql/servers/', variables('sqlServerName'), '/databases/', variables('sqlDbName'), '?api-version=', variables('sqlDatabaseApiVersion'))]",
-        "slackChannelName" : "[if(empty(parameters('slackChannelName')), '#dev-bot', parameters('slackChannelName'))]",
-        "slackStartMessageText" : "[concat('BEGIN : Teardown of ', variables('resourceGroupName'), ' and sql database ', variables('sqlDbName'))]",
-        "slackWebhookUrl" : "[parameters('slackWebhookUrl')]"
+        "sqlDatabaseUri": "[concat('https://management.azure.com', subscription().id, '/resourceGroups/', variables('sqlResourceGroupName'), '/providers/Microsoft.Sql/servers/', variables('sqlServerName'), '/databases/', variables('sqlDbName'), '?api-version=', variables('sqlDatabaseApiVersion'))]"
     },
     "resources": [
         {
@@ -93,18 +83,6 @@
                         "tenantId": {
                             "type": "string",
                             "defaultValue": "[parameters('servicePrincipalTenantId')]"
-                        },
-                        "slackChannelName" : {
-                            "type" : "string",
-                            "defaultValue" : "[variables('slackChannelName')]"
-                        },
-                        "slackStartMessageText" : {
-                            "type" : "string",
-                            "defaultValue" : "[variables('slackStartMessageText')]"
-                        },
-                        "slackWebhookUrl" : {
-                            "type" : "string",
-                            "defaultValue" : "[variables('slackWebhookUrl')]"
                         }
                     },
                     "triggers": {
@@ -119,24 +97,8 @@
                         }
                     },
                     "actions": {
-                        "SlackOnStart": {
-                            "inputs": {
-                                "body": {
-                                    "channel" : "@{parameters('slackChannelName')}",
-                                    "text": "@{parameters('slackStartMessageText')}"
-                                },
-                                "method": "POST",
-                                "uri": "@{parameters('slackWebhookUrl')}"
-                            },
-                            "runAfter": {},
-                            "type": "Http"
-                        },         
                         "DeleteResourceGroup": {
-                            "runAfter": {
-                                "SlackOnStart": [
-                                    "Succeeded"
-                                ]                                
-                            },
+                            "runAfter": { },
                             "type": "Http",
                             "inputs": {
                                 "authentication": {
@@ -151,11 +113,7 @@
                             }
                         },
                         "DeleteSqlDatabase": {
-                            "runAfter": {
-                                "SlackOnStart": [
-                                    "Succeeded"
-                                ]                                
-                            },
+                            "runAfter": { },
                             "type": "Http",
                             "inputs": {
                                 "authentication": {
