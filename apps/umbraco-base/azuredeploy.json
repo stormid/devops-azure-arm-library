@@ -1,0 +1,482 @@
+{
+  "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "deployEnvironment": {
+      "type": "string",
+      "allowedValues": [
+        "poc",
+        "pr",
+        "dev",
+        "wip",
+        "test",
+        "prod",
+        "demo"
+      ],
+      "metadata": {
+        "description" : "Select a deployment environment, this will be used when creating resources and will determine whether production settings will be applied for certain resources"        
+      }
+    },
+    "clientPrefix": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 10,
+      "metadata": {
+        "description" : "A client prefix value to use when creating or configuring resources"
+      }
+    },    
+    "sqlResourceGroup" : {
+      "type": "string",
+      "metadata": {
+        "description" : "The resource group either containing existing sql resources (SQL server and SQL elastic pool)"
+      }      
+    },
+    "sqlserverName" : {
+      "type": "string",
+      "metadata": {
+        "description" : "The name of an existing SQL server (excluding the .database.windows.net suffix) within the `sqlResourceGroup` group, NB: this must exist as the template does not contain a complete deployment properties"
+      }
+    },
+    "sqlserverDbPoolName" : {
+      "type": "string",
+      "defaultValue": "[parameters('sqlserverName')]",
+      "metadata": {
+        "description" : "The name of an existing SQL server elastic pool available within the same resource group as the `sqlServerName` server and also within the `sqlResourceGroup` group"
+      }
+    },    
+    "sqlDbAppUser" : {
+      "type": "string",
+      "defaultValue": "app",
+      "metadata": {
+        "description" : "The userId that will be used when generating database connection strings to store within the web app connection strings section (umbracoDbDSN).  NB: this template will be automatically add or update any users within the associated database"
+      }
+    },    
+    "sqlDbAppPassword" : {
+      "type": "securestring",
+      "metadata": {
+        "description" : "The password that will be used when generating database connection strings to store within the web app connection strings section (umbracoDbDSN).  NB: this template will be automatically add or update any users within the associated database"
+      }
+    },
+    "appServicePlanResourceGroup": {
+      "type": "string",
+      "metadata": {
+        "description" : "The resource group containing the app service plan to which the web app will be associated"
+      }
+    },
+    "appservicePlanName": {
+      "type": "string",
+      "metadata": {
+        "description" : "The name of the app service plan to which the web app will be associated"
+      }
+    },
+    "siteName" : {
+      "type": "string",
+      "minLength": 0,
+      "maxLength": 25,
+      "defaultValue": "",
+      "metadata": {
+        "description" : "ADVANCED: Specifying the `siteName` parameter will override the convention based generation of the the web app name (<clientPrefix>-<deployEnvironment>-<webappName>), this should not be used for most scenarios!"
+      }
+    },
+    "webappName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 15,
+      "metadata": {
+        "description" : "The name of the application itself, without any environment definition such as wip, test or prod.  This will become part of the siteName using the convention: <clientPrefix>-<deployEnvironment>-<webappName>"
+      }      
+    },    
+    "primaryHostname" : {
+      "type": "string",
+      "defaultValue": "[if(empty(parameters('customHostname')), '', parameters('customHostname')[0])]",
+      "metadata": {
+        "description" : "OPTIONAL: Specify a primary hostname (excluding httpScheme) to use for any application configuration values, this is likely the canonical hostname for the site"
+      }
+    },
+    "customHostname" : {
+      "type": "array",
+      "defaultValue": [ "" ],
+      "metadata": {
+        "description" : "OPTIONAL: An array of custom hostnames (excluding any protocol definition) that already contains a valid CNAME record pointing at the webapp name's azurewebsites.net address, if empty this step will be skipped"
+      }
+    },
+    "certificateThumbprint" : {
+      "type": "array",
+      "defaultValue": [ "" ],
+      "metadata": {
+        "description" : "OPTIONAL: An array of SSL certificate thumbprint values for each custom hostname (array indices should match between customHostname and this parameter) that is already available within the targetted deployment subscription, if empty this step will be skipped"
+      }
+    },           
+    "appInsightsLocation": {
+      "type": "string",
+      "allowedValues": [
+        "NorthEurope",
+        "WestEurope"
+      ],
+      "defaultValue": "NorthEurope"
+    },
+    "storageAccountResourceGroup": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().name]",
+      "metadata": {
+        "description" : "OPTIONAL: The resource group in which the web application storage account should be created/updated, this is only used if a `storageAccountName` is specified"
+      }
+    },
+    "storageAccountName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description" : "OPTIONAL: Overrides the convention based naming of the associated storage account, this can be used to specify an existing storage account for use with this web app, expects or creates the storage account within the resource group specified by `storageAccountResourceGroup`"
+      }
+    },
+    "storageAccountType": {
+      "type": "string",
+      "allowedValues": [
+        "Standard_LRS",
+        "Standard_GRS",
+        "Standard_RAGRS",
+        "Standard_ZRS"
+      ],
+      "defaultValue": "Standard_LRS",
+      "metadata": {
+        "description": "Specify the type of storage to be used, defaults to `Standard_LRS`"
+      }
+    },
+    "robotifyEnabled" : {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description" : "OPTIONAL: Ensures Robotify (https://github.com/stormid/robotify) is enabled"
+      }
+    },
+    "robotifyDisallowPaths" : {
+      "type": "string",
+      "defaultValue": "/",
+      "metadata": {
+        "description" : "OPTIONAL: Ensures Robotify (https://github.com/stormid/robotify) is configured to deny all crawlers by default"
+      }
+    },
+    "webappTimeZone" : {
+      "type": "string",
+      "allowedValues": [
+        "GMT Standard Time"
+      ],
+      "defaultValue": "GMT Standard Time",
+      "metadata": {
+        "description" : "Select a timezone to use for the webapp (sets WEBSITE_TIME_ZONE setting)"
+      }
+    }
+  },
+  "variables": {
+    "location" : "[resourceGroup().location]",
+    "isProdDeploy" : "[if(equals(parameters('deployEnvironment'), 'prod'), bool('false'), bool('true'))]",
+    "siteName" : "[if(empty(parameters('siteName')), toLower(concat(parameters('clientPrefix'), '-', parameters('deployEnvironment'), '-', parameters('webappName'))), parameters('siteName'))]",
+    "useSharedStorage" : "[not(empty(parameters('storageAccountName')))]",
+    "storageName" : "[toLower(replace(replace(if(empty(parameters('storageAccountName')), variables('siteName'), parameters('storageAccountName')), '-', ''), '_', ''))]",
+    "storageAccountResourceGroup" : "[toLower(if(empty(parameters('storageAccountName')), resourceGroup().name, parameters('storageAccountResourceGroup')))]",
+    "siteDeploySlotName" : "deploy",
+    "sqlDbName" : "[variables('siteName')]",
+    "sqlDbUserId" : "[if(empty(parameters('sqlDbAppUser')), variables('siteName'), parameters('sqlDbAppUser'))]",
+    "sqlDbUserPassword" : "[parameters('sqlDbAppPassword')]",
+    "appInsightsResource" : "[concat('microsoft.insights/components/', variables('siteName'))]",
+    "storageAccountBlobRootUri" : "[concat('https://', variables('storageName'), '.blob.core.windows.net')]",
+    "useSsl" : "[if(empty(parameters('certificateThumbprint')), bool('false'), bool('true'))]",
+    "httpScheme" : "[if(variables('useSsl'), 'https://', 'http://')]",
+    "primaryHostname" : "[parameters('primaryHostname')]",
+    "siteProperties" : {
+      "httpsOnly": true,
+      "clientAffinityEnabled": true,
+      "phpVersion": "",
+      "webSocketsEnabled": false,
+      "requestTracingEnabled": true,
+      "httpLoggingEnabled": true,
+      "logsDirectorySizeLimit": 40,
+      "detailedErrorLoggingEnabled": true,
+      "ftpsState": "Disabled",
+      "minTlsVersion": "1.2",
+      "http20Enabled": true,
+      "alwaysOn"  : true,
+      "use32BitWorkerProcess": false,
+      "remoteDebuggingEnabled": false,
+      "siteAuthEnabled": false,
+      "netFrameworkVersion":"v4.7"
+    }
+  },
+  "functions": [
+    {
+        "namespace": "sql",
+        "members": {
+            "buildConnectionString": {
+                "parameters": [
+                    {
+                        "name": "sqlServerFqdn",
+                        "type": "string"
+                    },
+                    {
+                        "name": "sqlDatabaseName",
+                        "type": "string"
+                    },
+                    {
+                        "name": "sqlDatabaseUserId",
+                        "type": "string"
+                    },
+                    {
+                        "name": "sqlDatabaseUserPassword",
+                        "type": "string"
+                    }
+                ],
+                "output": {
+                    "type": "string",
+                    "value": "[concat('Server=tcp:', parameters('sqlServerFqdn') ,',1433;Initial Catalog=',parameters('sqlDatabaseName'),';Persist Security Info=False;User ID=', parameters('sqlDatabaseUserId'), ';Password=', parameters('sqlDatabaseUserPassword'), ';MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;')]"
+                }
+            }
+        }
+    }
+],  
+  "outputs": {
+    "clientPrefix" : {
+      "type": "string",
+      "value": "[parameters('clientPrefix')]"
+    },
+    "deployEnvironment" : {
+      "type": "string",
+      "value": "[parameters('deployEnvironment')]"
+    },
+    "appServicePlanGroup" : {
+      "type": "string",
+      "value": "[parameters('appServicePlanResourceGroup')]"
+    },
+    "siteName" : {
+      "type": "string",
+      "value": "[reference(concat('Microsoft.Web/sites/', variables('siteName'))).name]"
+    },
+    "siteUrl" : {
+      "type": "string",
+      "value": "[if(empty(variables('primaryHostname')), reference(concat('Microsoft.Web/sites/', variables('siteName'))).hostnames[0], parameters('primaryHostname'))]"
+    },
+    "siteSlotName" : {
+      "type": "string",
+      "value": "[variables('siteDeploySlotName')]"
+    },
+    "siteSlotUrl" : {
+      "type": "string",
+      "value": "[reference(concat('Microsoft.Web/sites/', variables('siteName'), '/slots/', variables('siteDeploySlotName'))).hostnames[0]]"
+    },        
+    "sqlDbGroup" : {
+      "type": "string",
+      "value": "[parameters('sqlResourceGroup')]"
+    },
+    "sqlDbAppUser" : {
+      "type": "string",
+      "value": "[variables('sqlDbUserId')]"
+    },    
+    "sqlDbServer" : {
+      "type": "string",
+      "value": "[parameters('sqlserverName')]"
+    },
+    "sqlDbServerFqdn" : {
+      "type": "string",
+      "value": "[reference('sqlDb').outputs.sqlServerFqdn.value]"
+    },        
+    "sqlDbName" : {
+      "type": "string",
+      "value": "[variables('sqlDbName')]"
+    }
+  },
+  "resources": [
+    {
+      "apiVersion": "2017-05-10",
+      "name": "sqlDb",
+      "type": "Microsoft.Resources/deployments",
+      "resourceGroup": "[parameters('sqlResourceGroup')]",
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+           "uri":"https://raw.githubusercontent.com/stormid/devops-azure-arm-library/master/sql/sql-db-blank-existing-pool/azuredeploy.json",
+           "contentVersion":"1.1.0.0"
+        },
+        "parameters" : {
+          "sqlServerName" : { "value" : "[parameters('sqlserverName')]" },
+          "sqlPoolName" : { "value" : "[parameters('sqlserverDbPoolName')]" },
+          "sqlDbName" : { "value" : "[variables('sqlDbName')]" }
+        }
+      }
+    },
+    {
+      "condition" : "[not(empty(parameters('customHostname')[copyIndex()]))]",
+      "type":"Microsoft.Web/Sites/hostnameBindings",
+      "name": "[concat(variables('siteName'), '/', if(not(empty(parameters('customHostname')[copyIndex()])), parameters('customHostname')[copyIndex()], 'dummy'))]",
+      "apiVersion":"2018-02-01",
+      "location":"[variables('location')]",
+      "properties":{
+          "siteName" : "[variables('siteName')]",
+          "hostNameType" : "Verified",
+          "azureResourceType" : "Website",
+          "sslState" : "[if(greater(length(parameters('certificateThumbprint')[copyIndex()]), 0), 'SniEnabled', 'Disabled')]",
+          "thumbprint" : "[if(greater(length(parameters('certificateThumbprint')[copyIndex()]), 0), parameters('certificateThumbprint')[copyIndex()], '')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/Sites', variables('siteName'))]"
+      ],
+      "copy" : {
+        "name" : "customDomainsCopy",
+        "count" : "[length(parameters('customHostname'))]"
+      }
+    },        
+    {
+      "apiVersion": "2018-02-01",
+      "name": "[variables('siteName')]",
+      "type": "Microsoft.Web/Sites",
+      "location": "[variables('location')]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "tags": { },
+      "properties": {
+        "serverFarmId": "[resourceId(parameters('appServicePlanResourceGroup'), 'Microsoft.Web/serverfarms', parameters('appservicePlanName'))]",
+        "httpsOnly": true
+      },
+      "resources": [
+        {
+          "apiVersion": "2018-02-01",
+          "name": "web",
+          "type": "config",
+          "dependsOn": [
+              "[concat('Microsoft.Web/Sites/', variables('siteName'))]"
+          ],
+          "properties": "[variables('siteProperties')]"
+        },
+        {
+          "apiVersion": "2018-02-01",
+          "type": "slots",
+          "name": "[variables('siteDeploySlotName')]",
+          "kind": "app",
+          "location": "[variables('location')]",
+          "identity": {
+            "type": "SystemAssigned"
+          },    
+          "tags": { },
+          "dependsOn": [
+            "[concat('Microsoft.Web/Sites/', variables('siteName'))]"
+          ],
+          "properties": {
+          },
+          "resources" : [
+            {
+              "apiVersion": "2018-02-01",
+              "name": "web",
+              "type": "config",
+              "dependsOn": [
+                  "[resourceId('Microsoft.Web/sites/slots', variables('siteName'), variables('siteDeploySlotName'))]"
+              ],
+              "properties": "[variables('siteProperties')]"
+            },
+            {
+              "apiVersion": "2018-02-01",
+              "name": "appsettings",
+              "type": "config",
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites/slots', variables('siteName'), variables('siteDeploySlotName'))]"
+              ],
+              "properties": {
+                "ImageProcessor.AzureBlobCache.CachedStorageAccount" : "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageName'),';AccountKey=',listKeys(resourceId(variables('storageAccountResourceGroup'), 'Microsoft.Storage/storageAccounts', variables('storageName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[1].value)]",
+                "ImageProcessor.AzureBlobCache.CachedCDNRoot" : "[concat(variables('storageAccountBlobRootUri'), '/')]",
+                "ImageProcessor.AzureBlobCache.CachedBlobContainer" : "cache",
+                "ImageProcessor.AzureBlobCache.SourceBlobContainer" : "media",
+                "ImageProcessor.CloudImageService.Host" : "[concat(variables('storageAccountBlobRootUri'), '/media/')]",
+                "ImageProcessor.CloudImageService.Container" : "media",
+
+                "AzureBlobFileSystem.ConnectionString:media" : "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageName'),';AccountKey=',listKeys(resourceId(variables('storageAccountResourceGroup'), 'Microsoft.Storage/storageAccounts', variables('storageName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[1].value)]",
+                "AzureBlobFileSystem.ContainerName:media" : "media",
+                "AzureBlobFileSystem.RootUrl:media" : "[concat(variables('storageAccountBlobRootUri'), '/')]",
+
+                "BaseUrl" : "[if(empty(variables('primaryHostname')), concat(variables('httpScheme'), reference(concat('Microsoft.Web/sites/', variables('siteName'))).hostnames[0], '/'), concat(variables('httpScheme'), parameters('primaryHostname'), '/'))]",
+
+                "WEBSITE_TIME_ZONE" : "[parameters('webappTimeZone')]",
+                "APPINSIGHTS_INSTRUMENTATIONKEY" : "[reference(variables('appInsightsResource')).InstrumentationKey]",
+                "APPINSIGHTS_DEVELOPER_MODE" : "[if(variables('isProdDeploy'), 'false', 'true')]",
+
+                "Robotify:Enabled": "[parameters('robotifyEnabled')]",
+                "Robotify:DisallowPaths": "[parameters('robotifyDisallowPaths')]",
+                "Robotify:SitemapUrl": "[if(empty(variables('primaryHostname')), concat(variables('httpScheme'), reference(concat('Microsoft.Web/sites/', variables('siteName'))).hostnames[0], '/sitemap.xml'), concat(variables('httpScheme'), parameters('primaryHostname'), '/sitemap.xml'))]",
+                "ApplicationInsights:InstrumentationKey": "[reference(variables('appInsightsResource')).InstrumentationKey]",
+                "ApplicationInsights:Disabled": "false",
+                "ApplicationInsights:DeveloperMode": "[if(equals(parameters('deployEnvironment'), 'prod'), 'false', 'true')]",
+              }
+            },
+            {
+              "apiVersion": "2018-02-01",
+              "name": "connectionstrings",
+              "type": "config",
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites/slots', variables('siteName'), variables('siteDeploySlotName'))]"
+              ],
+              "properties": {
+                "umbracoDbDsn" : {
+                  "value" : "[sql.buildConnectionString(reference('sqlDb').outputs.sqlServerFqdn.value, variables('sqlDbName'), variables('sqlDbUserId'), variables('sqlDbUserPassword'))]",
+                  "type" : "SQLAzure"
+                }
+              }            
+            }
+          ]
+        },  
+        {
+          "name": "slotConfigNames",
+          "type": "config",
+          "apiVersion": "2018-02-01",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/Sites', variables('siteName'))]"
+          ],
+          "tags": {
+            "displayName": "slotConfigNames"
+          },
+          "properties": {
+          }
+        },              
+        {
+          "apiVersion": "2015-05-01",
+          "name": "[variables('siteName')]",
+          "type": "Microsoft.Insights/components",
+          "location": "[parameters('appInsightsLocation')]",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/Sites', variables('siteName'))]"
+          ],
+          "tags": {
+            "[concat('hidden-link:', resourceGroup().id, '/providers/Microsoft.Web/sites/', variables('siteName'))]": "Resource",
+            "displayName": "AppInsightsComponent"
+          },
+          "properties": {
+            "ApplicationId": "[variables('siteName')]"
+          }
+        },
+        {
+          "condition" : "[not(variables('useSharedStorage'))]",
+          "type": "Microsoft.Storage/storageAccounts",
+          "name": "[variables('storageName')]",
+          "apiVersion": "2018-02-01",
+          "location": "[variables('location')]",
+          "sku": {
+            "name": "[parameters('storageAccountType')]"
+          },
+          "tags": { },
+          "kind": "BlobStorage",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/Sites', variables('siteName'))]"
+          ],
+          "properties": {
+            "accessTier" : "Hot",
+            "supportsHttpsTrafficOnly": true,
+            "encryption": {
+              "keySource": "Microsoft.Storage",
+              "services": {
+                "blob": {
+                  "enabled": true
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
