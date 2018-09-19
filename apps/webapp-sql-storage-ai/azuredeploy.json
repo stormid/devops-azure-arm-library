@@ -16,76 +16,93 @@
     },
     "sharedResourceGroup" : {
       "type": "string",
-      "defaultValue": "",
-      "metadata": {
-        "description" : "Name of the resource group used for shared resources/deployments, typically this is where your database resources would live"
-      }
+      "allowedValues": [
+        "qa_shared",
+        "prod-shared"
+      ]
     },
     "appserviceName": {
       "type": "string",
-      "defaultValue": "",
-      "metadata": {
-        "description" : "Name of the app service plan in which to create the website, this is expected to exist and live within the 'sharedResourceGroup'"
-      }      
+      "allowedValues": [
+        "qa-shared",
+        "prod-shared"
+      ]
     },
     "sqlserverName" : {
       "type": "string",
+      "allowedValues": [
+        "qa-shared",
+        "prod-shared"
+      ],
       "metadata": {
-        "description" : "Name of the sql server instance (excluding .database.windows.net), this is expected to exist and live within the 'sharedResourceGroup'"
+        "description" : ""
       }
     },
     "sqlserverDbPoolName" : {
       "type": "string",
+      "allowedValues": [
+        "qa-shared",
+        "prod-shared"
+      ],
       "defaultValue": "[parameters('sqlserverName')]",
       "metadata": {
-        "description" : "Name of the sql server database pool, this is expected to exist and live within the 'sharedResourceGroup'"
+        "description" : ""
       }
     },    
     "clientPrefix": {
       "type": "string",
-      "defaultValue": "",
       "minLength": 1,
       "maxLength": 10,
       "metadata": {
-        "description" : "A client prefix value to use when creating or configuring resources, prepended to the created resources"
+        "description" : "A client prefix value to use when creating or configuring resources"
       }
     },
+    "siteName" : {
+      "type": "string",
+      "minLength": 0,
+      "maxLength": 25,
+      "defaultValue": ""
+    },    
     "webappName": {
       "type": "string",
-      "defaultValue": "",
       "minLength": 1,
-      "maxLength": 15,
+      "maxLength": 10,
       "metadata": {
-        "description" : "The name of the application itself, e.g. 'web', 'sdk', 'shop'.  You should aim to make this a short descriptor of the site's purpose"
+        "description" : "The name of the application itself, without any environment definition such as wip, test or prod"
       }      
     },    
     "sqlDbAppUser" : {
       "type": "string",
-      "defaultValue": "app",
+      "defaultValue": "",
       "metadata": {
-        "description" : "The sql user account to use when generating a sql connection string to add to connection settings"
+        "description" : ""
       }
     },    
     "sqlDbAppPassword" : {
       "type": "securestring",
       "metadata": {
-        "description" : "The sql user account password to use when generating a sql connection string to add to connection settings"
+        "description" : ""
+      }
+    },
+    "primaryHostname" : {
+      "type": "string",
+      "defaultValue": "[if(empty(parameters('customHostname')), '', parameters('customHostname')[0])]",
+      "metadata": {
+        "description" : "Specify a primary hostname (excluding httpScheme) to use for any application configuration values, this is likely the canonical hostname for the site"
       }
     },
     "customHostname" : {
-      "type": "string",
-      "maxLength": 100,
-      "defaultValue": "",
+      "type": "array",
+      "defaultValue": [ "" ],
       "metadata": {
-        "description" : "The custom hostname (excluding any protocol definition) that already contains a valid CNAME record pointing at the webapp name's azurewebsites.net address, if empty this step will be skipped"
+        "description" : "The custom hostnames (excluding any protocol definition) that already contains a valid CNAME record pointing at the webapp name's azurewebsites.net address, if empty this step will be skipped"
       }
     },
     "certificateThumbprint" : {
-      "type": "string",
-      "defaultValue": "",
-      "maxLength": 100,
+      "type": "array",
+      "defaultValue": [ "" ],
       "metadata": {
-        "description" : "The thumbprint of an SSL certificate that is already available within the targetted deployment subscription, if empty this step will be skipped"
+        "description" : "The thumbprint of an SSL certificate for each custom hostname (array indices should match between customHostname and this parameter) that is already available within the targetted deployment subscription, if empty this step will be skipped"
       }
     },           
     "appInsightsLocation": {
@@ -98,17 +115,11 @@
     },
     "storageAccountResourceGroup": {
       "type": "string",
-      "defaultValue": "[parameters('sharedResourceGroup')]",
-      "metadata": {
-        "description" : "The resource group in which the storage account should be either created or used from (if it already exists)"
-      }      
+      "defaultValue": "[parameters('sharedResourceGroup')]"
     },
     "storageAccountName": {
       "type": "string",
-      "defaultValue": "",
-      "metadata": {
-        "description" : "The name of the storage account to create or use (if existing).  If left blank then the name will be derived from the website resource name without dashes (-)"
-      }      
+      "defaultValue": ""
     },
     "storageAccountType": {
       "type": "string",
@@ -122,13 +133,14 @@
       "metadata": {
         "description": "Storage type required"
       }
-    }         
+    }
   },
   "variables": {
-    "siteName" : "[concat(parameters('clientPrefix'), '-', parameters('deployEnvironment'), '-', parameters('webappName'))]",
+    "isProdDeploy" : "[if(equals(parameters('deployEnvironment'), 'prod'), bool('false'), bool('true'))]",
+    "siteName" : "[if(empty(parameters('siteName')), toLower(concat(parameters('clientPrefix'), '-', parameters('deployEnvironment'), '-', parameters('webappName'))), parameters('siteName'))]",
     "useSharedStorage" : "[not(empty(parameters('storageAccountName')))]",
-    "storageName" : "[replace(replace(if(empty(parameters('storageAccountName')), variables('siteName'), parameters('storageAccountName')), '-', ''), '_', '')]",
-    "storageAccountResourceGroup" : "[if(empty(parameters('storageAccountName')), resourceGroup().name, parameters('storageAccountResourceGroup'))]",
+    "storageName" : "[toLower(replace(replace(if(empty(parameters('storageAccountName')), variables('siteName'), parameters('storageAccountName')), '-', ''), '_', ''))]",
+    "storageAccountResourceGroup" : "[toLower(if(empty(parameters('storageAccountName')), resourceGroup().name, parameters('storageAccountResourceGroup')))]",
     "siteDeploySlotName" : "deploy",
     "sqlDbName" : "[variables('siteName')]",
     "sqlDbUserId" : "[if(empty(parameters('sqlDbAppUser')), variables('siteName'), parameters('sqlDbAppUser'))]",
@@ -137,20 +149,7 @@
     "storageAccountBlobRootUri" : "[concat('https://', variables('storageName'), '.blob.core.windows.net')]",
     "useSsl" : "[if(empty(parameters('certificateThumbprint')), bool('false'), bool('true'))]",
     "httpScheme" : "[if(variables('useSsl'), 'https://', 'http://')]",
-    "siteProperties" : {
-      "httpsOnly": true,
-      "clientAffinityEnabled": true,
-      "phpVersion": "",
-      "webSocketsEnabled": false,
-      "requestTracingEnabled": false,
-      "httpLoggingEnabled": false,
-      "logsDirectorySizeLimit": 40,
-      "detailedErrorLoggingEnabled": false,
-      "ftpsState": "Disabled",
-      "minTlsVersion": "1.2",
-      "http20Enabled": true,
-      "alwaysOn"  : true
-    }
+    "primaryHostname" : "[parameters('primaryHostname')]"
   },
   "functions": [
     {
@@ -247,7 +246,28 @@
           "sqlDbName" : { "value" : "[variables('sqlDbName')]" }
         }
       }
-    },    
+    },
+    {
+      "condition" : "[not(empty(parameters('customHostname')[copyIndex()]))]",
+      "type":"Microsoft.Web/Sites/hostnameBindings",
+      "name": "[concat(variables('siteName'), '/', if(not(empty(parameters('customHostname')[copyIndex()])), parameters('customHostname')[copyIndex()], 'dummy'))]",
+      "apiVersion":"2018-02-01",
+      "location":"[resourceGroup().location]",
+      "properties":{
+          "siteName" : "[variables('siteName')]",
+          "hostNameType" : "Verified",
+          "azureResourceType" : "Website",
+          "sslState" : "[if(greater(length(parameters('certificateThumbprint')[copyIndex()]), 0), 'SniEnabled', 'Disabled')]",
+          "thumbprint" : "[if(greater(length(parameters('certificateThumbprint')[copyIndex()]), 0), parameters('certificateThumbprint')[copyIndex()], '')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/Sites', variables('siteName'))]"
+      ],
+      "copy" : {
+        "name" : "customDomainsCopy",
+        "count" : "[length(parameters('customHostname'))]"
+      }
+    },               
     {
       "apiVersion": "2018-02-01",
       "name": "[variables('siteName')]",
@@ -259,18 +279,26 @@
       "tags": { },
       "properties": {
         "serverFarmId": "[resourceId(parameters('sharedResourceGroup'), 'Microsoft.Web/serverfarms', parameters('appserviceName'))]",
-        "httpsOnly": true
+        "httpsOnly": true,
+        "siteConfig" : {
+          "clientAffinityEnabled": true,
+          "phpVersion": "",
+          "webSocketsEnabled": false,
+          "requestTracingEnabled": true,
+          "httpLoggingEnabled": true,
+          "logsDirectorySizeLimit": 40,
+          "detailedErrorLoggingEnabled": true,
+          "ftpsState": "Disabled",
+          "minTlsVersion": "1.2",
+          "http20Enabled": true,
+          "alwaysOn"  : true,
+          "use32BitWorkerProcess": false,
+          "remoteDebuggingEnabled": false,
+          "siteAuthEnabled": false,
+          "netFrameworkVersion":"v4.7"
+        }      
       },
       "resources": [
-        {
-          "apiVersion": "2018-02-01",
-          "name": "web",
-          "type": "config",
-          "dependsOn": [
-              "[resourceId('Microsoft.Web/Sites', variables('siteName'))]"
-          ],
-          "properties": "[variables('siteProperties')]"
-        },
         {
           "apiVersion": "2018-02-01",
           "type": "slots",
@@ -289,15 +317,6 @@
           "resources" : [
             {
               "apiVersion": "2018-02-01",
-              "name": "web",
-              "type": "config",
-              "dependsOn": [
-                  "[resourceId('Microsoft.Web/sites/slots', variables('siteName'), variables('siteDeploySlotName'))]"
-              ],
-              "properties": "[variables('siteProperties')]"
-            },
-            {
-              "apiVersion": "2018-02-01",
               "name": "appsettings",
               "type": "config",
               "dependsOn": [
@@ -306,7 +325,9 @@
               "properties": {
                 "WEBSITE_TIME_ZONE" : "GMT Standard Time",
                 "APPINSIGHTS_INSTRUMENTATIONKEY" : "[reference(variables('appInsightsResource')).InstrumentationKey]",
-                "APPINSIGHTS_DEVELOPER_MODE" : "[if(equals(parameters('deployEnvironment'), 'prod'), 'false', 'true')]"
+                "APPINSIGHTS_DEVELOPER_MODE" : "[if(variables('isProdDeploy'), 'false', 'true')]",
+
+                "BaseUrl" : "[if(empty(variables('primaryHostname')), concat(variables('httpScheme'), reference(concat('Microsoft.Web/sites/', variables('siteName'))).hostnames[0], '/'), concat(variables('httpScheme'), variables('primaryHostname'), '/'))]",
               }
             },
             {
@@ -337,23 +358,6 @@
           },
           "properties": {
           }
-        },              
-        {
-          "condition" : "[greater(length(parameters('customHostname')), 0)]",
-          "type":"hostnameBindings",
-          "name": "[if(greater(length(parameters('customHostname')), 0), parameters('customHostname'), 'dummy')]",
-          "apiVersion":"2018-02-01",
-          "location":"[resourceGroup().location]",
-          "properties":{
-              "siteName" : "[variables('siteName')]",
-              "hostNameType" : "Verified",
-              "azureResourceType" : "Website",
-              "sslState" : "[if(greater(length(parameters('certificateThumbprint')), 0), 'SniEnabled', 'Disabled')]",
-              "thumbprint" : "[if(greater(length(parameters('certificateThumbprint')), 0), parameters('certificateThumbprint'), '')]"
-          },
-          "dependsOn": [
-            "[resourceId('Microsoft.Web/Sites', variables('siteName'))]"
-          ]
         },
         {
           "apiVersion": "2015-05-01",
