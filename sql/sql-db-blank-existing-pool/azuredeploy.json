@@ -1,6 +1,6 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
-    "contentVersion": "1.1.0.0",
+    "contentVersion": "1.2.0.0",
     "parameters": {
         "location": {
             "type": "string",
@@ -43,7 +43,28 @@
             "metadata": {
                 "description": "What collation to use for the newly created database, defaults to SQL_Latin1_General_CP1_CI_AS"
             }
-        }
+        },
+        "deployEnvironment" : {
+            "type" : "string",
+            "defaultValue" : "Unknown",
+            "metadata" : {
+                "description" : "Supply the deployment environment to use when applying 'env' tag to database resource"
+            }
+        },
+        "clientPrefix" : {
+            "type" : "string",
+            "defaultValue" : "Unknown",
+            "metadata" : {
+                "description" : "Supply the client prefix value to use when applying 'clientPrefix' tag to database resource"
+            }
+        },
+        "appName" : {
+            "type" : "string",
+            "defaultValue" : "Unknown",
+            "metadata" : {
+                "description" : "Supply the name of the application this database is associated with, this will be applied as a resource tag"
+            }
+        }        
     },
     "variables": {
         "transparentDataEncryption": "[if(parameters('sqlDbEnableTDE'), 'Enabled', 'Disabled')]"
@@ -51,6 +72,11 @@
     "resources": [
         {
             "type": "Microsoft.Sql/servers/databases",
+            "tags" : {
+                "env" : "[parameters('deployEnvironment')]",
+                "clientPrefix" : "[parameters('clientPrefix')]",
+                "appName" : "[parameters('appName')]"
+            },
             "name": "[concat(parameters('sqlServerName'), '/', parameters('sqlDbName'))]",
             "apiVersion": "2017-10-01-preview",
             "location": "[parameters('location')]",
