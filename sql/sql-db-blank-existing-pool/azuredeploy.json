@@ -64,6 +64,10 @@
             "metadata" : {
                 "description" : "Supply the name of the application this database is associated with, this will be applied as a resource tag"
             }
+        },
+        "tech": {
+            "type": "string",
+            "defaultValue": "other"
         }        
     },
     "variables": {
