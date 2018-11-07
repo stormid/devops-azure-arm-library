@@ -79,7 +79,8 @@
             "tags" : {
                 "env" : "[parameters('deployEnvironment')]",
                 "clientPrefix" : "[parameters('clientPrefix')]",
-                "appName" : "[parameters('appName')]"
+                "appName" : "[parameters('appName')]",
+                "tech" : "[parameters('tech')]"
             },
             "name": "[concat(parameters('sqlServerName'), '/', parameters('sqlDbName'))]",
             "apiVersion": "2017-10-01-preview",
