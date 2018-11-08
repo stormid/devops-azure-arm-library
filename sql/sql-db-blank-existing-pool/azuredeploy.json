@@ -44,6 +44,10 @@
                 "description": "What collation to use for the newly created database, defaults to SQL_Latin1_General_CP1_CI_AS"
             }
         },
+        "tags" : {
+            "type" : "object",
+            "defaultValue" : { }
+        },
         "deployEnvironment" : {
             "type" : "string",
             "defaultValue" : "Unknown",
@@ -76,12 +80,7 @@
     "resources": [
         {
             "type": "Microsoft.Sql/servers/databases",
-            "tags" : {
-                "env" : "[parameters('deployEnvironment')]",
-                "clientPrefix" : "[parameters('clientPrefix')]",
-                "appName" : "[parameters('appName')]",
-                "tech" : "[parameters('tech')]"
-            },
+            "tags" : "[parameters('tags')]",
             "name": "[concat(parameters('sqlServerName'), '/', parameters('sqlDbName'))]",
             "apiVersion": "2017-10-01-preview",
             "location": "[parameters('location')]",
