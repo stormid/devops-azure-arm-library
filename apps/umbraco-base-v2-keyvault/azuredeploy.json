@@ -1,6 +1,6 @@
 {
     "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
-    "contentVersion": "2.0.0.0",
+    "contentVersion": "0.0.0.1",
     "parameters": {
         "clientPrefix": {
             "type": "string",
@@ -195,6 +195,10 @@
     "variables": {
         "isProdDeploy": "[if(equals(parameters('env'), 'prod'), bool('false'), bool('true'))]",
         "siteName": "[if(empty(parameters('siteName')), toLower(concat(parameters('clientPrefix'), '-', parameters('env'), '-', parameters('appName'))), parameters('siteName'))]",
+        
+        "siteNameIdentityResourceId": "[concat(resourceId('Microsoft.Web/sites', variables('siteName')),'/providers/Microsoft.ManagedIdentity/Identities/default')]",
+        "siteSlotNameIdentityResourceId": "[concat(resourceId('Microsoft.Web/sites/slots', variables('siteName'), variables('siteDeploySlotName')),'/providers/Microsoft.ManagedIdentity/Identities/default')]",
+        
         "useSharedStorage": "[not(empty(parameters('storageAccountName')))]",
         "storageName": "[toLower(replace(replace(if(empty(parameters('storageAccountName')), variables('siteName'), parameters('storageAccountName')), '-', ''), '_', ''))]",
         "storageAccountResourceGroup": "[toLower(if(empty(parameters('storageAccountResourceGroup')), resourceGroup().name, parameters('storageAccountResourceGroup')))]",
@@ -416,14 +420,12 @@
                                 "APPINSIGHTS_INSTRUMENTATIONKEY": "[reference(variables('appInsightsResource')).InstrumentationKey]",
                                 "APPINSIGHTS_DEVELOPER_MODE": "[if(equals(variables('isProdDeploy'), 'true'), 'false', 'true')]",
 
-                                "ImageProcessor.AzureBlobCache.CachedStorageAccount": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageName'),';AccountKey=',listKeys(resourceId(variables('storageAccountResourceGroup'), 'Microsoft.Storage/storageAccounts', variables('storageName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[1].value)]",
                                 "ImageProcessor.AzureBlobCache.CachedCDNRoot": "[if(parameters('useCacheCdn'), concat('https://', reference(variables('cdnEndpointName'), '2018-04-02').hostName, '/'), concat(variables('storageAccountBlobRootUri'), '/'))]",
                                 "ImageProcessor.CloudImageService.Host": "[concat(variables('storageAccountBlobRootUri'), '/', variables('mediaContainerName'))]",
                                 "ImageProcessor.CloudImageService.Container": "[variables('mediaContainerName')]",
                                 "ImageProcessor.AzureBlobCache.CachedBlobContainer": "[variables('cacheContainerName')]",
                                 "ImageProcessor.AzureBlobCache.SourceBlobContainer": "[variables('mediaContainerName')]",
 
-                                "AzureBlobFileSystem.ConnectionString:media": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageName'),';AccountKey=',listKeys(resourceId(variables('storageAccountResourceGroup'), 'Microsoft.Storage/storageAccounts', variables('storageName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[1].value)]",
                                 "AzureBlobFileSystem.ContainerName:media": "[variables('mediaContainerName')]",
                                 "AzureBlobFileSystem.RootUrl:media": "[concat(variables('storageAccountBlobRootUri'), '/')]",
 
@@ -435,18 +437,24 @@
                             }
                         },
                         {
+                            "condition" : "[not(variables('useKeyVault'))]",
                             "apiVersion": "2018-02-01",
                             "name": "connectionstrings",
                             "type": "config",
                             "dependsOn": [
                                 "[resourceId('Microsoft.Web/sites/slots', variables('siteName'), variables('siteDeploySlotName'))]"
                             ],
-                            "properties": {
-                                "umbracoDbDsn": {
-                                    "value": "[sql.buildConnectionString(reference(resourceId(parameters('sqlResourceGroup'), 'Microsoft.Sql/servers/', parameters('sqlServerName')), '2015-05-01-preview').fullyQualifiedDomainName, variables('sqlDbName'), variables('sqlDbUserId'), variables('sqlDbUserPassword'))]",
-                                    "type": "SQLAzure"
-                                }
-                            }
+                            "properties": { }
+                        },                        
+                        {
+                            "condition" : "[variables('useKeyVault')]",
+                            "apiVersion": "2018-02-01",
+                            "name": "connectionstrings",
+                            "type": "config",
+                            "dependsOn": [
+                                "[resourceId('Microsoft.Web/sites/slots', variables('siteName'), variables('siteDeploySlotName'))]"
+                            ],
+                            "properties": { }
                         }
                     ]
                 },
@@ -592,6 +600,87 @@
                     ]
                 }            
             ]
-        }
+        },
+        {
+            "type": "Microsoft.KeyVault/vaults",
+            "name": "[variables('siteName')]",
+            "apiVersion": "2016-10-01",
+            "location": "[resourceGroup().location]",
+            "tags": {
+                "env": "[parameters('env')]",
+                "clientPrefix": "[parameters('clientPrefix')]",
+                "appName": "[parameters('appName')]",
+                "tech" : "[parameters('tech')]"
+            },
+            "properties": {
+              "sku": {
+                "family": "A",
+                "name": "Standard"
+              },
+              "tenantId": "[reference(variables('siteNameIdentityResourceId'), '2015-08-31-PREVIEW').tenantId]",
+              "accessPolicies": [
+                {
+                  "tenantId": "[reference(variables('siteNameIdentityResourceId'), '2015-08-31-PREVIEW').tenantId]",
+                  "objectId": "[reference(variables('siteNameIdentityResourceId'), '2015-08-31-PREVIEW').principalId]",
+                  "permissions": {
+                    "secrets": [
+                      "get", "list"
+                    ]
+                  }
+                },
+                {
+                  "tenantId": "[reference(variables('siteSlotNameIdentityResourceId'), '2015-08-31-PREVIEW').tenantId]",
+                  "objectId": "[reference(variables('siteSlotNameIdentityResourceId'), '2015-08-31-PREVIEW').principalId]",
+                  "permissions": {
+                    "secrets": [
+                      "get", "list"
+                    ]
+                  }
+                }              
+              ],
+              "enabledForDeployment": "false"
+            },
+            "dependsOn": [
+              "[concat('Microsoft.Web/sites/', variables('siteName'))]"
+            ],
+            "resources" : [
+              {
+                "type": "Microsoft.KeyVault/vaults/secrets",
+                "name": "[concat(variables('siteName'), '/', 'umbracoDbDsn')]",
+                "apiVersion": "2016-10-01",
+                "properties": {
+                  "value": "[sql.buildConnectionString(reference(resourceId(parameters('sqlResourceGroup'), 'Microsoft.Sql/servers/', parameters('sqlServerName')), '2015-05-01-preview').fullyQualifiedDomainName, variables('sqlDbName'), variables('sqlDbUserId'), variables('sqlDbUserPassword'))]"
+                },
+                "dependsOn": [
+                  "[concat('Microsoft.Web/sites/', variables('siteName'))]",
+                  "[concat('Microsoft.KeyVault/vaults/', variables('siteName'))]"
+                ]
+              },
+              {
+                "type": "Microsoft.KeyVault/vaults/secrets",
+                "name": "[concat(variables('siteName'), '/', 'ImageProcessor--AzureBlobCache--CachedStorageAccount')]",
+                "apiVersion": "2016-10-01",
+                "properties": {
+                  "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageName'),';AccountKey=',listKeys(resourceId(variables('storageAccountResourceGroup'), 'Microsoft.Storage/storageAccounts', variables('storageName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[1].value)]"
+                },
+                "dependsOn": [
+                  "[concat('Microsoft.Web/sites/', variables('siteName'))]",
+                  "[concat('Microsoft.KeyVault/vaults/', variables('siteName'))]"
+                ]
+              },
+              {
+                "type": "Microsoft.KeyVault/vaults/secrets",
+                "name": "[concat(variables('siteName'), '/', 'AzureBlobFileSystem--ConnectionString--media')]",
+                "apiVersion": "2016-10-01",
+                "properties": {
+                  "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageName'),';AccountKey=',listKeys(resourceId(variables('storageAccountResourceGroup'), 'Microsoft.Storage/storageAccounts', variables('storageName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[1].value)]"
+                },
+                "dependsOn": [
+                  "[concat('Microsoft.Web/sites/', variables('siteName'))]",
+                  "[concat('Microsoft.KeyVault/vaults/', variables('siteName'))]"
+                ]
+              }
+            ]
+          }            
     ]
 }
