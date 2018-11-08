@@ -1,0 +1,686 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "0.0.0.1",
+    "parameters": {
+        "clientPrefix": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10,
+            "metadata": {
+                "description": "A client prefix value to use when creating or configuring resources, this value should be a short abbreviation of the full client name and should only contain lowercase characters a-z and 0-9"
+            }
+        },
+        "env": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4,
+            "allowedValues": [
+                "dev",
+                "wip",
+                "test"
+            ],
+            "metadata": {
+                "description" : "Select a deployment environment, this will be used when creating resources and will determine whether production settings will be applied for certain resources"
+            }
+        },
+        "tech": {
+            "type": "string",
+            "allowedValues": [
+                "net-framework",
+                "net-core",
+                "umbraco",
+                "nop-commerce",
+                "node",
+                "react",
+                "html",
+                "other"
+            ],
+            "defaultValue": "umbraco",
+            "metadata": {
+                "description" : "Used to define the primary back-end technology stack or framework used by the app.  This could be a specific known app framework like Umbraco or NopCommerce or more generic like net-core or node"
+            }
+        },
+        "appServiceResourceGroup": {
+            "type": "string",
+            "metadata": {
+                "description" : "The resource group containing an existing App Service Plan, the new web app will be created within this"
+            }
+        },
+        "appserviceName": {
+            "type": "string",
+            "metadata" : {
+                "description" : "The name of the App Service Plan contained within the appServiceResourceGroup"
+            }
+        },
+        "appName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 15,
+            "metadata": {
+                "description": "The name of the application itself, without any environment definition such as wip, test or prod, e.g. `web` or `app` or `shop`"
+            }
+        },
+        "appTimeZone" : {
+            "type": "string",
+            "defaultValue": "GMT Standard Time",
+            "metadata": {
+                "description" : "OPTIONAL: Provides a value for the WEBSITE_TIME_ZONE app setting denoting the timezone in which the web app should run, defaults to: `GMT Standard Time`"
+            }
+        },
+        "siteName": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 25,
+            "defaultValue": "",
+            "metadata": {
+                "description" : "OPTIONAL: If set this value will override the convention driven name of the webapp, typically <clientPrefix>-<env>-<appName>"
+            }
+        },        
+        "sqlResourceGroup": {
+            "type": "string",
+            "defaultValue": "[parameters('appServiceResourceGroup')]",
+            "metadata": {
+                "description" : "The resource group in which the SQL database will be created, this resource group should already contain a SQL server and SQL elastic pool, defaults to the resource group specified for `appServiceResourceGroup`"
+            }
+        },
+        "sqlserverName": {
+            "type": "string",
+            "metadata": {
+                "description": "The name of the SQL server on which the required SQL database will be created or referenced (if it already exists)"
+            }
+        },
+        "sqlserverDbPoolName": {
+            "type": "string",
+            "metadata": {
+                "description": "The name of the SQL server elastic pool associated with the SQL server"
+            }
+        },
+        "sqlDbAppUser": {
+            "type": "string",
+            "defaultValue": "app",
+            "metadata": {
+                "description": "The name of the sql server or database contained user that will be used to generate a SQL connection string to access the SQL database used by these resources, defaults to: `app`.  NB: This template does not create this user, the user will need to either already exist in an existing database or be generated after the template initially runs.  This is a limitation of ARM"
+            }
+        },
+        "sqlDbAppPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "The password associated with the sql server / database login specified in `sqlDbAppUser`"
+            }
+        },
+        "primaryHostname": {
+            "type": "string",
+            "defaultValue": "[if(empty(parameters('customHostname')), '', parameters('customHostname')[0])]",
+            "metadata": {
+                "description": "OPTIONAL: Specify a primary hostname (excluding httpScheme) to use for any application configuration values, this is likely the canonical hostname for the site"
+            }
+        },
+        "customHostname": {
+            "type": "array",
+            "defaultValue": [
+                ""
+            ],
+            "metadata": {
+                "description": "OPTIONAL: The custom hostnames (excluding any protocol definition) that already contains a valid CNAME record pointing at the webapp name's azurewebsites.net address, if empty this step will be skipped"
+            }
+        },
+        "certificateThumbprint": {
+            "type": "array",
+            "defaultValue": [
+                ""
+            ],
+            "metadata": {
+                "description": "OPTIONAL: The thumbprint of an SSL certificate for each custom hostname (array indices should match between customHostname and this parameter) that is already available within the targetted deployment subscription, if empty this step will be skipped"
+            }
+        },
+        "appInsightsLocation": {
+            "type": "string",
+            "allowedValues": [
+                "NorthEurope",
+                "WestEurope"
+            ],
+            "defaultValue": "NorthEurope",
+            "metadata": {
+                "description" : "OPTIONAL: Since Application Insight is not yet available in all regions you will need to specify a region in which to deploy the Application Insights resource for the application, defaults to: North Europe"
+            }
+        },
+        "storageAccountResourceGroup": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description" : "OPTIONAL: If you need to use an existing storage account or a storage account held outside the deployment resource group you can specify the name of the resource group containing it here.  This storage account will be configured within app settings"
+            }
+        },
+        "storageAccountName": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description" : "OPTIONAL: If you need to use an existing storage account or a storage account held outside the deployment resource group you can specify the name of it here.  This storage account will be configured within app settings"
+            }            
+        },
+        "storageAccountType": {
+            "type": "string",
+            "allowedValues": [
+                "Standard_LRS",
+                "Standard_GRS",
+                "Standard_RAGRS",
+                "Standard_ZRS"
+            ],
+            "defaultValue": "Standard_LRS",
+            "metadata": {
+                "description": "Storage type required, defaults to: Standard_LRS"
+            }
+        },
+        "useCacheCdn" : {
+            "type": "bool",
+            "defaultValue": false,
+            "metadata": {
+                "description" : "Set to true if you want to create and configure a CDN to use for serving media"
+            }
+        },
+        "cdnCacheProfileSku" : {
+            "type": "string",
+            "allowedValues": [
+                "Standard_Verizon",
+                "Premium_Verizon", 
+                "Standard_Akamai", 
+                "Standard_Microsoft"
+            ],
+            "defaultValue": "Standard_Verizon",
+            "metadata": {
+                "description" : "The Sku of CDN profile to create, defaults to `Standard_Verizon`, only used when `useCdnCache` is `true`"
+            }
+        }
+    },
+    "variables": {
+        "isProdDeploy": "[if(equals(parameters('env'), 'prod'), bool('false'), bool('true'))]",
+        "siteName": "[if(empty(parameters('siteName')), toLower(concat(parameters('clientPrefix'), '-', parameters('env'), '-', parameters('appName'))), parameters('siteName'))]",
+        
+        "siteNameIdentityResourceId": "[concat(resourceId('Microsoft.Web/sites', variables('siteName')),'/providers/Microsoft.ManagedIdentity/Identities/default')]",
+        "siteSlotNameIdentityResourceId": "[concat(resourceId('Microsoft.Web/sites/slots', variables('siteName'), variables('siteDeploySlotName')),'/providers/Microsoft.ManagedIdentity/Identities/default')]",
+        
+        "useSharedStorage": "[not(empty(parameters('storageAccountName')))]",
+        "storageName": "[toLower(replace(replace(if(empty(parameters('storageAccountName')), variables('siteName'), parameters('storageAccountName')), '-', ''), '_', ''))]",
+        "storageAccountResourceGroup": "[toLower(if(empty(parameters('storageAccountResourceGroup')), resourceGroup().name, parameters('storageAccountResourceGroup')))]",
+        "siteDeploySlotName": "deploy",
+        "sqlDbName": "[variables('siteName')]",
+        "sqlDbUserId": "[if(empty(parameters('sqlDbAppUser')), variables('siteName'), parameters('sqlDbAppUser'))]",
+        "sqlDbUserPassword": "[parameters('sqlDbAppPassword')]",
+        "appInsightsResource": "[concat('microsoft.insights/components/', variables('siteName'))]",
+        "cacheContainerName": "cache",
+        "mediaContainerName": "media",
+        "storageAccountBlobHostname": "[concat(variables('storageName'), '.blob.core.windows.net')]",
+        "storageAccountBlobRootUri": "[concat('https://', variables('storageAccountBlobHostname'))]",
+        "useSsl": "[if(empty(parameters('certificateThumbprint')), bool('false'), bool('true'))]",
+        "httpScheme": "[if(variables('useSsl'), 'https://', 'http://')]",
+        "primaryHostname": "[parameters('primaryHostname')]",
+        "useCacheCdn" : "[parameters('useCacheCdn')]",
+        "cdnProfileName": "[variables('siteName')]",
+        "cdnEndpointName": "[concat(variables('siteName'), '-cache')]",
+        "robotifyDisallowProd" : "/aspnet_client/;/bin/;/config/;/data/;/install/;/masterpages/;/umbraco/;/umbraco_client/;/usercontrols/;/xslt/;/site-improve-access/",
+        "robotifyDisallowAll" : "/",
+        "robotifyEnvDisallowPaths" : "[if(equals(variables('isProdDeploy'), 'true'), variables('robotifyDisallowProd'), variables('robotifyDisallowAll'))]"
+    },
+    "functions": [
+        {
+            "namespace": "sql",
+            "members": {
+                "buildConnectionString": {
+                    "parameters": [
+                        {
+                            "name": "sqlServerFqdn",
+                            "type": "string"
+                        },
+                        {
+                            "name": "sqlDatabaseName",
+                            "type": "string"
+                        },
+                        {
+                            "name": "sqlDatabaseUserId",
+                            "type": "string"
+                        },
+                        {
+                            "name": "sqlDatabaseUserPassword",
+                            "type": "string"
+                        }
+                    ],
+                    "output": {
+                        "type": "string",
+                        "value": "[concat('Server=tcp:', parameters('sqlServerFqdn') ,',1433;Initial Catalog=',parameters('sqlDatabaseName'),';Persist Security Info=False;User ID=', parameters('sqlDatabaseUserId'), ';Password=', parameters('sqlDatabaseUserPassword'), ';MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;')]"
+                    }
+                }
+            }
+        }
+    ],
+    "outputs": {
+        "clientPrefix": {
+            "type": "string",
+            "value": "[parameters('clientPrefix')]"
+        },
+        "env": {
+            "type": "string",
+            "value": "[parameters('env')]"
+        },
+        "siteName": {
+            "type": "string",
+            "value": "[reference(concat('Microsoft.Web/sites/', variables('siteName'))).name]"
+        },
+        "siteUrl": {
+            "type": "string",
+            "value": "[if(empty(variables('primaryHostname')), reference(concat('Microsoft.Web/sites/', variables('siteName'))).hostnames[0], variables('primaryHostname'))]"
+        },
+        "siteSlotName": {
+            "type": "string",
+            "value": "[variables('siteDeploySlotName')]"
+        },
+        "siteSlotUrl": {
+            "type": "string",
+            "value": "[reference(concat('Microsoft.Web/sites/', variables('siteName'), '/slots/', variables('siteDeploySlotName'))).hostnames[0]]"
+        },
+        "sqlDbGroup": {
+            "type": "string",
+            "value": "[parameters('sqlResourceGroup')]"
+        },
+        "sqlDbAppUser": {
+            "type": "string",
+            "value": "[variables('sqlDbUserId')]"
+        },
+        "sqlDbServer": {
+            "type": "string",
+            "value": "[parameters('sqlserverName')]"
+        },
+        "sqlDbServerFqdn" : {
+            "type": "string",
+            "value": "[reference(resourceId(parameters('sqlResourceGroup'), 'Microsoft.Sql/servers/', parameters('sqlServerName')), '2015-05-01-preview').fullyQualifiedDomainName]"
+        },
+        "sqlDbName": {
+            "type": "string",
+            "value": "[variables('sqlDbName')]"
+        }
+    },
+    "resources": [
+        {
+            "apiVersion": "2017-05-10",
+            "name": "[concat('sqldb-', variables('siteName'))]",
+            "type": "Microsoft.Resources/deployments",
+            "resourceGroup": "[parameters('sqlResourceGroup')]",
+            "properties": {
+                "mode": "Incremental",
+                "templateLink": {
+                    "uri": "https://raw.githubusercontent.com/stormid/devops-azure-arm-library/master/sql/sql-db-blank-existing-pool/azuredeploy.json",
+                    "contentVersion": "1.1.0.0"
+                },
+                "parameters": {
+                    "sqlServerName": {
+                        "value": "[parameters('sqlserverName')]"
+                    },
+                    "sqlPoolName": {
+                        "value": "[parameters('sqlserverDbPoolName')]"
+                    },
+                    "sqlDbName": {
+                        "value": "[variables('sqlDbName')]"
+                    },
+                    "tags" : {
+                        "value" : {
+                            "env": "[parameters('env')]",
+                            "clientPrefix": "[parameters('clientPrefix')]",
+                            "appName": "[parameters('appName')]",
+                            "tech" : "[parameters('tech')]"
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "condition": "[not(empty(parameters('customHostname')[copyIndex()]))]",
+            "type": "Microsoft.Web/Sites/hostnameBindings",
+            "name": "[concat(variables('siteName'), '/', if(not(empty(parameters('customHostname')[copyIndex()])), parameters('customHostname')[copyIndex()], 'dummy'))]",
+            "apiVersion": "2018-02-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "siteName": "[variables('siteName')]",
+                "hostNameType": "Verified",
+                "azureResourceType": "Website",
+                "sslState": "[if(greater(length(parameters('certificateThumbprint')[copyIndex()]), 0), 'SniEnabled', 'Disabled')]",
+                "thumbprint": "[if(greater(length(parameters('certificateThumbprint')[copyIndex()]), 0), parameters('certificateThumbprint')[copyIndex()], '')]"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/Sites', variables('siteName'))]"
+            ],
+            "copy": {
+                "name": "customDomainsCopy",
+                "count": "[length(parameters('customHostname'))]"
+            }
+        },
+        {
+            "apiVersion": "2018-02-01",
+            "name": "[variables('siteName')]",
+            "type": "Microsoft.Web/Sites",
+            "location": "[resourceGroup().location]",
+            "tags": {
+                "env": "[parameters('env')]",
+                "clientPrefix": "[parameters('clientPrefix')]",
+                "appName": "[parameters('appName')]",
+                "tech" : "[parameters('tech')]"
+            },
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "serverFarmId": "[resourceId(parameters('appServiceResourceGroup'), 'Microsoft.Web/serverfarms', parameters('appserviceName'))]",
+                "httpsOnly": true,
+                "siteConfig": {
+                    "clientAffinityEnabled": true,
+                    "phpVersion": "",
+                    "webSocketsEnabled": false,
+                    "requestTracingEnabled": true,
+                    "httpLoggingEnabled": true,
+                    "logsDirectorySizeLimit": 40,
+                    "detailedErrorLoggingEnabled": true,
+                    "ftpsState": "Disabled",
+                    "minTlsVersion": "1.2",
+                    "http20Enabled": true,
+                    "alwaysOn": true,
+                    "use32BitWorkerProcess": false,
+                    "remoteDebuggingEnabled": false,
+                    "siteAuthEnabled": false,
+                    "netFrameworkVersion": "v4.6"
+                }
+            },
+            "resources": [
+                {
+                    "apiVersion": "2018-02-01",
+                    "type": "slots",
+                    "name": "[variables('siteDeploySlotName')]",
+                    "kind": "app",
+                    "location": "[resourceGroup().location]",
+                    "identity": {
+                        "type": "SystemAssigned"
+                    },
+                    "tags": {
+                        "env": "[parameters('env')]",
+                        "clientPrefix": "[parameters('clientPrefix')]",
+                        "appName": "[parameters('appName')]",
+                        "tech" : "[parameters('tech')]"
+                    },
+                    "dependsOn": [
+                        "[concat('Microsoft.Web/Sites/', variables('siteName'))]"
+                    ],
+                    "properties": {},
+                    "resources": [
+                        {
+                            "apiVersion": "2018-02-01",
+                            "name": "appsettings",
+                            "type": "config",
+                            "dependsOn": [
+                                "[resourceId('Microsoft.Web/sites/slots', variables('siteName'), variables('siteDeploySlotName'))]"
+                            ],
+                            "properties": {
+                                "WEBSITE_TIME_ZONE": "[parameters('appTimeZone')]",
+                                "APPINSIGHTS_INSTRUMENTATIONKEY": "[reference(variables('appInsightsResource')).InstrumentationKey]",
+                                "APPINSIGHTS_DEVELOPER_MODE": "[if(equals(variables('isProdDeploy'), 'true'), 'false', 'true')]",
+
+                                "ImageProcessor.AzureBlobCache.CachedCDNRoot": "[if(parameters('useCacheCdn'), concat('https://', reference(variables('cdnEndpointName'), '2018-04-02').hostName, '/'), concat(variables('storageAccountBlobRootUri'), '/'))]",
+                                "ImageProcessor.CloudImageService.Host": "[concat(variables('storageAccountBlobRootUri'), '/', variables('mediaContainerName'))]",
+                                "ImageProcessor.CloudImageService.Container": "[variables('mediaContainerName')]",
+                                "ImageProcessor.AzureBlobCache.CachedBlobContainer": "[variables('cacheContainerName')]",
+                                "ImageProcessor.AzureBlobCache.SourceBlobContainer": "[variables('mediaContainerName')]",
+
+                                "AzureBlobFileSystem.ContainerName:media": "[variables('mediaContainerName')]",
+                                "AzureBlobFileSystem.RootUrl:media": "[concat(variables('storageAccountBlobRootUri'), '/')]",
+
+                                "BaseUrl": "[if(empty(variables('primaryHostname')), concat(variables('httpScheme'), reference(concat('Microsoft.Web/sites/', variables('siteName'))).hostnames[0], '/'), concat(variables('httpScheme'), variables('primaryHostname'), '/'))]",
+
+                                "Robotify:Enabled": "True",
+                                "Robotify:DisallowPaths": "[variables('robotifyEnvDisallowPaths')]",
+                                "Robotify:SitemapUrl": "[if(empty(variables('primaryHostname')), concat(variables('httpScheme'), reference(concat('Microsoft.Web/sites/', variables('siteName'))).hostnames[0], '/sitemap.xml'), concat(variables('httpScheme'), variables('primaryHostname'), '/sitemap.xml'))]"
+                            }
+                        },
+                        {
+                            "condition" : "[not(variables('useKeyVault'))]",
+                            "apiVersion": "2018-02-01",
+                            "name": "connectionstrings",
+                            "type": "config",
+                            "dependsOn": [
+                                "[resourceId('Microsoft.Web/sites/slots', variables('siteName'), variables('siteDeploySlotName'))]"
+                            ],
+                            "properties": { }
+                        },                        
+                        {
+                            "condition" : "[variables('useKeyVault')]",
+                            "apiVersion": "2018-02-01",
+                            "name": "connectionstrings",
+                            "type": "config",
+                            "dependsOn": [
+                                "[resourceId('Microsoft.Web/sites/slots', variables('siteName'), variables('siteDeploySlotName'))]"
+                            ],
+                            "properties": { }
+                        }
+                    ]
+                },
+                {
+                    "name": "slotConfigNames",
+                    "type": "config",
+                    "apiVersion": "2018-02-01",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Web/Sites', variables('siteName'))]"
+                    ],
+                    "tags": {
+                        "displayName": "slotConfigNames"
+                    },
+                    "properties": {}
+                },
+                {
+                    "apiVersion": "2015-05-01",
+                    "name": "[variables('siteName')]",
+                    "type": "Microsoft.Insights/components",
+                    "location": "[parameters('appInsightsLocation')]",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Web/Sites', variables('siteName'))]"
+                    ],
+                    "tags": {
+                        "[concat('hidden-link:', resourceGroup().id, '/providers/Microsoft.Web/sites/', variables('siteName'))]": "Resource",
+                        "env": "[parameters('env')]",
+                        "clientPrefix": "[parameters('clientPrefix')]",
+                        "appName": "[parameters('appName')]",
+                        "tech" : "[parameters('tech')]"
+                    },
+                    "properties": {
+                        "ApplicationId": "[variables('siteName')]"
+                    }
+                },
+                {
+                    "condition": "[not(variables('useSharedStorage'))]",
+                    "type": "Microsoft.Storage/storageAccounts",
+                    "name": "[variables('storageName')]",
+                    "apiVersion": "2018-02-01",
+                    "location": "[resourceGroup().location]",
+                    "tags": {
+                        "env": "[parameters('env')]",
+                        "clientPrefix": "[parameters('clientPrefix')]",
+                        "appName": "[parameters('appName')]",
+                        "tech" : "[parameters('tech')]"
+                    },
+                    "sku": {
+                        "name": "[parameters('storageAccountType')]"
+                    },
+                    "kind": "BlobStorage",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Web/Sites', variables('siteName'))]"
+                    ],
+                    "properties": {
+                        "accessTier": "Hot",
+                        "supportsHttpsTrafficOnly": true,
+                        "encryption": {
+                            "keySource": "Microsoft.Storage",
+                            "services": {
+                                "blob": {
+                                    "enabled": true
+                                }
+                            }
+                        }
+                    },
+                    "resources": [
+                        {
+                            "name": "[concat('default/', variables('mediaContainerName'))]",
+                            "type": "blobServices/containers",
+                            "apiVersion": "2018-03-01-preview",
+                            "properties": {
+                                "publicAccess": "Blob"
+                            },
+                            "dependsOn": [
+                                "[variables('storageName')]"
+                            ]
+                        },
+                        {
+                            "name": "[concat('default/', variables('cacheContainerName'))]",
+                            "type": "blobServices/containers",
+                            "apiVersion": "2018-03-01-preview",
+                            "properties": {
+                                "publicAccess": "Blob"
+                            },
+                            "dependsOn": [
+                                "[variables('storageName')]"
+                            ]
+                        },
+                        {
+                            "condition": "[variables('useCacheCdn')]",
+                            "tags": {
+                                "env": "[parameters('env')]",
+                                "clientPrefix": "[parameters('clientPrefix')]",
+                                "appName": "[parameters('appName')]",
+                                "tech" : "[parameters('tech')]"
+                            },
+                            "type": "microsoft.cdn/profiles",
+                            "sku": {
+                                "name": "[parameters('cdnCacheProfileSku')]"
+                            },
+                            "name": "[variables('cdnProfileName')]",
+                            "apiVersion": "2018-04-02",
+                            "location": "[resourceGroup().location]",
+                            "properties": {},
+                            "dependsOn": [
+                                "[concat('Microsoft.Storage/storageAccounts/', variables('storageName'))]",
+                                "[resourceId('Microsoft.Web/Sites', variables('siteName'))]"
+                            ],
+                            "resources": [
+                                {
+                                    "condition": "[variables('useCacheCdn')]",
+                                    "type": "microsoft.cdn/profiles/endpoints",
+                                    "tags": {
+                                        "env": "[parameters('env')]",
+                                        "clientPrefix": "[parameters('clientPrefix')]",
+                                        "appName": "[parameters('appName')]",
+                                        "tech" : "[parameters('tech')]"
+                                    },
+                                    "name": "[concat(variables('cdnProfileName'),'/',variables('cdnEndpointName'))]",
+                                    "apiVersion": "2018-04-02",
+                                    "location": "[resourceGroup().location]",
+                                    "properties": {
+                                        "isHttpAllowed": false,
+                                        "isHttpsAllowed": true,
+                                        "originHostHeader": "[variables('storageAccountBlobHostname')]",
+                                        "origins": [
+                                            {
+                                                "name": "[variables('cacheContainerName')]",
+                                                "properties": {
+                                                    "hostName": "[variables('storageAccountBlobHostname')]"
+                                                }
+                                            }
+                                        ],
+                                        "optimizationType": "GeneralWebDelivery",
+                                        "isCompressionEnabled": false
+                                    },
+                                    "dependsOn": [
+                                        "[concat('Microsoft.Cdn/profiles/', variables('cdnProfileName'))]"
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }            
+            ]
+        },
+        {
+            "type": "Microsoft.KeyVault/vaults",
+            "name": "[variables('siteName')]",
+            "apiVersion": "2016-10-01",
+            "location": "[resourceGroup().location]",
+            "tags": {
+                "env": "[parameters('env')]",
+                "clientPrefix": "[parameters('clientPrefix')]",
+                "appName": "[parameters('appName')]",
+                "tech" : "[parameters('tech')]"
+            },
+            "properties": {
+              "sku": {
+                "family": "A",
+                "name": "Standard"
+              },
+              "tenantId": "[reference(variables('siteNameIdentityResourceId'), '2015-08-31-PREVIEW').tenantId]",
+              "accessPolicies": [
+                {
+                  "tenantId": "[reference(variables('siteNameIdentityResourceId'), '2015-08-31-PREVIEW').tenantId]",
+                  "objectId": "[reference(variables('siteNameIdentityResourceId'), '2015-08-31-PREVIEW').principalId]",
+                  "permissions": {
+                    "secrets": [
+                      "get", "list"
+                    ]
+                  }
+                },
+                {
+                  "tenantId": "[reference(variables('siteSlotNameIdentityResourceId'), '2015-08-31-PREVIEW').tenantId]",
+                  "objectId": "[reference(variables('siteSlotNameIdentityResourceId'), '2015-08-31-PREVIEW').principalId]",
+                  "permissions": {
+                    "secrets": [
+                      "get", "list"
+                    ]
+                  }
+                }              
+              ],
+              "enabledForDeployment": "false"
+            },
+            "dependsOn": [
+              "[concat('Microsoft.Web/sites/', variables('siteName'))]"
+            ],
+            "resources" : [
+              {
+                "type": "Microsoft.KeyVault/vaults/secrets",
+                "name": "[concat(variables('siteName'), '/', 'umbracoDbDsn')]",
+                "apiVersion": "2016-10-01",
+                "properties": {
+                  "value": "[sql.buildConnectionString(reference(resourceId(parameters('sqlResourceGroup'), 'Microsoft.Sql/servers/', parameters('sqlServerName')), '2015-05-01-preview').fullyQualifiedDomainName, variables('sqlDbName'), variables('sqlDbUserId'), variables('sqlDbUserPassword'))]"
+                },
+                "dependsOn": [
+                  "[concat('Microsoft.Web/sites/', variables('siteName'))]",
+                  "[concat('Microsoft.KeyVault/vaults/', variables('siteName'))]"
+                ]
+              },
+              {
+                "type": "Microsoft.KeyVault/vaults/secrets",
+                "name": "[concat(variables('siteName'), '/', 'ImageProcessor--AzureBlobCache--CachedStorageAccount')]",
+                "apiVersion": "2016-10-01",
+                "properties": {
+                  "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageName'),';AccountKey=',listKeys(resourceId(variables('storageAccountResourceGroup'), 'Microsoft.Storage/storageAccounts', variables('storageName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[1].value)]"
+                },
+                "dependsOn": [
+                  "[concat('Microsoft.Web/sites/', variables('siteName'))]",
+                  "[concat('Microsoft.KeyVault/vaults/', variables('siteName'))]"
+                ]
+              },
+              {
+                "type": "Microsoft.KeyVault/vaults/secrets",
+                "name": "[concat(variables('siteName'), '/', 'AzureBlobFileSystem--ConnectionString--media')]",
+                "apiVersion": "2016-10-01",
+                "properties": {
+                  "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageName'),';AccountKey=',listKeys(resourceId(variables('storageAccountResourceGroup'), 'Microsoft.Storage/storageAccounts', variables('storageName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[1].value)]"
+                },
+                "dependsOn": [
+                  "[concat('Microsoft.Web/sites/', variables('siteName'))]",
+                  "[concat('Microsoft.KeyVault/vaults/', variables('siteName'))]"
+                ]
+              }
+            ]
+          }            
+    ]
+}
