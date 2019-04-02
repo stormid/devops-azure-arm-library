@@ -1,0 +1,206 @@
+{
+  "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "deployEnvironment": {
+      "type": "string",
+      "allowedValues": [
+        "poc",
+        "pr",
+        "dev",
+        "wip",
+        "test",
+        "prod",
+        "demo"
+      ]
+    },
+    "clientPrefix": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 10,
+      "metadata": {
+        "description": "A client prefix value to use when creating or configuring resources"
+      }
+    },
+    "appNameSuffix": {
+      "type": "string"
+    },
+    "hybridConnectionEndpointHost" : {
+      "type": "string"
+    },
+    "hybridConnectionEndpointPort" : {
+      "type": "int"
+    }
+  },
+  "variables": {
+    "location": "[resourceGroup().location]",
+    "appserviceName": "[toLower(concat(parameters('clientPrefix'), '-', parameters('deployEnvironment')))]",
+    "siteName": "[toLower(concat(parameters('clientPrefix'), '-', parameters('deployEnvironment'), '-', parameters('appNameSuffix')))]",
+    "hc.relayName" : "[variables('siteName')]",
+    "hc.name" : "[variables('siteName')]",
+    "userMetadata" : [
+      { "key": "endpoint","value":"[concat(parameters('hybridConnectionEndpointHost'), ':', parameters('hybridConnectionEndpointPort'))]"}
+    ]
+  },
+  "outputs": {
+    "clientPrefix": {
+      "type": "string",
+      "value": "[parameters('clientPrefix')]"
+    },
+    "deployEnvironment": {
+      "type": "string",
+      "value": "[parameters('deployEnvironment')]"
+    },
+    "siteName": {
+      "type": "string",
+      "value": "[reference(concat('Microsoft.Web/sites/', variables('siteName'))).name]"
+    },
+    "siteUrl": {
+      "type": "string",
+      "value": "[reference(concat('Microsoft.Web/sites/', variables('siteName'))).hostnames[0]]"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Relay/namespaces",
+      "sku": {
+        "name": "Standard",
+        "tier": "Standard"
+      },
+      "name": "[variables('hc.relayName')]",
+      "apiVersion": "2017-04-01",
+      "location": "[variables('location')]",
+      "tags": {},
+      "scale": null,
+      "properties": {
+        "serviceBusEndpoint": "[concat('https://', variables('hc.relayName'),'.servicebus.windows.net:443/')]"
+      },
+      "dependsOn": [],
+      "resources": [
+        {
+          "type": "AuthorizationRules",
+          "name": "RootManageSharedAccessKey",
+          "apiVersion": "2017-04-01",
+          "location": "[variables('location')]",
+          "scale": null,
+          "properties": {
+            "rights": [
+              "Listen",
+              "Manage",
+              "Send"
+            ]
+          },
+          "dependsOn": [
+            "[resourceId('Microsoft.Relay/namespaces', variables('hc.relayName'))]"
+          ]
+        },
+        {
+          "type": "hybridConnections",
+          "name": "[variables('hc.name')]",
+          "apiVersion": "2017-04-01",
+          "location": "[variables('location')]",
+          "properties": {
+            "path" : "",
+            "requiresClientAuthorization": true,
+            "userMetadata": "[string(variables('userMetadata'))]"
+          },
+          "dependsOn": [
+            "[resourceId('Microsoft.Relay/namespaces', variables('hc.relayName'))]"
+          ],
+          "resources": [
+            {
+              "type": "AuthorizationRules",
+              "apiVersion": "2017-04-01",
+              "location": "[variables('location')]",
+              "name": "defaultListener",
+              "dependsOn": [
+                "[resourceId('Microsoft.Relay/namespaces/hybridConnections', variables('hc.relayName'), variables('hc.name'))]"
+              ],
+              "properties": {
+                "rights": [
+                  "Listen"
+                ]
+              }
+            },
+            {
+              "type": "AuthorizationRules",
+              "apiVersion": "2017-04-01",
+              "location": "[variables('location')]",
+              "name": "defaultSender",
+              "dependsOn": [
+                "[resourceId('Microsoft.Relay/namespaces/hybridConnections', variables('hc.relayName'), variables('hc.name'))]"
+              ],
+              "properties": {
+                "rights": [
+                  "Send"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "kind": "app",
+      "name": "[variables('siteName')]",
+      "apiVersion": "2016-08-01",
+      "location": "[variables('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Relay/namespaces', variables('hc.relayName'))]",
+        "[resourceId('Microsoft.Relay/namespaces/hybridConnections/authorizationRules', variables('hc.relayName'), variables('hc.name'), 'defaultSender')]"
+      ],
+      "properties": {
+        "enabled": true,
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('appserviceName'))]",
+        "reserved": false,
+        "clientAffinityEnabled": false,
+        "httpsOnly": true
+      },
+      "resources": [
+        {
+          "type": "hybridConnectionNamespaces/relays",
+          "name": "[concat(variables('hc.relayName'), '/', variables('hc.name'))]",
+          "apiVersion": "2018-02-01",
+          "location": "[variables('location')]",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/sites', variables('siteName'))]"
+          ],
+          "properties": {
+            "serviceBusNamespace": "[variables('siteName')]",
+            "relayName": "[variables('siteName')]",
+            "relayArmUri": "[resourceId('Microsoft.Relay/namespaces/hybridConnections', variables('hc.relayName'), variables('hc.name'))]",
+            "hostName": "[split(variables('userMetadata')[0].value, ':')[0]]",
+            "port": "[split(variables('userMetadata')[0].value, ':')[1]]",    
+            "sendKeyName": "defaultSender",
+            "sendKeyValue": "[listkeys(resourceId('Microsoft.Relay/namespaces/hybridConnections/authorizationRules', variables('hc.relayName'), variables('hc.name'), 'defaultSender'), '2017-04-01').primaryKey]"
+          }
+        },
+        {
+          "type": "config",
+          "name": "web",
+          "apiVersion": "2016-08-01",
+          "location": "UK West",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/sites', variables('siteName'))]"
+          ],
+          "scale": null,
+          "properties": {
+            "numberOfWorkers": 1,
+            "netFrameworkVersion": "v4.6",
+            "phpVersion": "off",
+            "requestTracingEnabled": false,
+            "remoteDebuggingEnabled": false,
+            "httpLoggingEnabled": false,
+            "logsDirectorySizeLimit": 7,
+            "detailedErrorLoggingEnabled": false,
+            "use32BitWorkerProcess": true,
+            "webSocketsEnabled": false,
+            "alwaysOn": false,
+            "siteAuthEnabled": false
+          }
+        }
+      ]
+    }
+  ]
+}
