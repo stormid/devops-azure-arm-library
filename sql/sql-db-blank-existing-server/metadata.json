@@ -1,0 +1,8 @@
+{
+    "$schema": "https://aka.ms/azure-quickstart-templates-metadata-schema#",
+    "itemDisplayName": "Provision blank sql database to an existing sql server",
+    "description": "This template provisions a new blank sql database to an existing sql server and by default will enable Transparent Data Encryption (TDE) for the database.",
+    "summary": "Provision a sql database to an existing sql server with Transparent Data Encryption",
+    "githubUsername": "alanwthom",
+    "dateUpdated": "2019-06-05"
+  }
