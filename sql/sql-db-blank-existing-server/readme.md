@@ -10,7 +10,7 @@ Use this template when you want to add a new blank sql database to an existing s
 |-|-|
 |`location`|The location of the resource group in which the deployment is happening|
 |`sqlServerName`|The name of the sql server resource, excluding .database.windows.net|
-|`skuName`|The SKU value of the database to be created (e.g. S1)|
+|`skuName`|The SKU value of the database to be created (e.g. `S1`)|
 |`sqlDbName`|The name of the database to create|
 |`sqlDbUserId`|The user id to use when constructing the returned connection string|
 |`sqlDbUserPassword`|The user password to use when constructing the returned connection string|
