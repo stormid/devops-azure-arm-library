@@ -1,6 +1,6 @@
 {
     "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
-    "contentVersion": "2.0.0.0",
+    "contentVersion": "3.0.0.0",
     "parameters": {
         "clientPrefix": {
             "type": "string",
@@ -91,6 +91,7 @@
         },
         "sqlDbName": {
             "type": "string",
+            "defaultValue" : "",
             "metadata": {
                 "description": "The name of the SQL database"
             }
