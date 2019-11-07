@@ -383,6 +383,7 @@
                                 "[resourceId('Microsoft.Web/sites/slots', variables('siteName'), variables('siteDeploySlotName'))]"
                             ],
                             "properties": {
+                                "WEBSITE_DISABLE_OVERLAPPED_RECYCLING": 1,
                                 "WEBSITE_TIME_ZONE": "[parameters('appTimeZone')]",
                                 "APPINSIGHTS_INSTRUMENTATIONKEY": "[reference(variables('appInsightsResource')).InstrumentationKey]",
                                 "APPINSIGHTS_DEVELOPER_MODE": "[if(equals(variables('isProdDeploy'), 'true'), 'false', 'true')]",
